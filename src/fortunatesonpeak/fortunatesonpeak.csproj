@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- This is the most appropriate target framework for the game's Unity version. -->
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <!-- This is the GUID of your mod. Example: com.github.YourAccount.BepInExTemplate -->
+    <AssemblyName>com.github.aleasdev.fortunatesonpeak</AssemblyName>
+    <!-- This is the display name of your mod. Example: BepInEx Template -->
+    <AssemblyTitle>fortunatesonpeak</AssemblyTitle>
+    <!-- This is the version number of your mod. -->
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <!--
+  How to include thunderstore mods as dependencies via nuget
+
+  We have already added the windows10ce nuget feed to this project
+  in NuGet.Config so all you need to do is list a dependency like
+  this:
+
+
+  Private="false" will stop it from being copied to the output folder
+  during build. This will cause the mod to be downloaded and its
+  methods will be available at compile time for your code. You'll still
+  need to add it as a dependency in your manifest.json, of course
+  -->
+
+  <ItemGroup>
+    <Reference Include="UnityEngine">
+      <HintPath>E:\SteamLibrary\steamapps\common\PEAK\PEAK_Data\Managed\UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>E:\SteamLibrary\steamapps\common\PEAK\PEAK_Data\Managed\UnityEngine.UI.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>E:\SteamLibrary\steamapps\common\PEAK\PEAK_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>E:\SteamLibrary\steamapps\common\PEAK\PEAK_Data\Managed\UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="assembly-CSharp">
+      <HintPath>E:\SteamLibrary\steamapps\common\PEAK\PEAK_Data\Managed\assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="PhotonUnityNetworking">
+      <HintPath>E:\SteamLibrary\steamapps\common\PEAK\PEAK_Data\Managed\PhotonUnityNetworking.dll</HintPath>
+    </Reference>
+    
+      </ItemGroup>
+</Project>
