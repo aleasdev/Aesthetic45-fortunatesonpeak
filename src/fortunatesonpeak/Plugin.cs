@@ -63,9 +63,9 @@ public partial class FortunateSonPeakPlugin : BaseUnityPlugin
                 // fortunateSonClip = WavUtility.ToAudioClip(audioBytes, "fortunateson"); // Necesitarías una clase WavUtility
 
                 // La forma asíncrona es la más segura y robusta:
-                // GameObject tempGameObject = new GameObject("AudioLoader");
+                 GameObject tempGameObject = new GameObject("AudioLoader");
                 // Asegúrate de que este objeto no se destruya al cargar escenas, o hazlo persistente.
-                // DontDestroyOnLoad(tempGameObject); 
+                DontDestroyOnLoad(tempGameObject); 
                 StartCoroutine(LoadWavFile(audioFilePath, tempGameObject)); // Pasamos el GameObject para que la Coroutine lo destruya
             }
             else
