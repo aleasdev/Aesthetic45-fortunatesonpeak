@@ -27,13 +27,13 @@ public partial class FortunateSonPeakPlugin : BaseUnityPlugin
     {
         Log = Logger;
         Log.LogInfo("fortunatesonpeak plugin is loaded!");
-        Log.LogInfo("El mod está cargando..."); 
+        Log.LogInfo("El mod está cargando...");
 
         LoadAudioClip();
 
         var harmony = new Harmony("com.aleasdev.fortunatesonpeak");
         harmony.PatchAll();
-        Log.LogInfo("¡El mod se ha cargado correctamente!"); 
+        Log.LogInfo("¡El mod se ha cargado correctamente!");
     }
 
     private void LoadAudioClip()
@@ -120,8 +120,6 @@ public partial class FortunateSonPeakPlugin : BaseUnityPlugin
                 source.loop = true;
 
                 // Buscar el AudioMixerGroup de música
-
-                // Buscar el AudioMixerGroup de música
                 var musicGroup = Resources
                     .FindObjectsOfTypeAll<AudioMixerGroup>()
                     .FirstOrDefault(g => g.name == "Music_Setting");
@@ -129,13 +127,13 @@ public partial class FortunateSonPeakPlugin : BaseUnityPlugin
                 if (musicGroup != null)
                 {
                     source.outputAudioMixerGroup = musicGroup;
-                    source.volume = 1.0f;
+                    source.volume = 0.7f;
                     Log.LogInfo("[✔] Asignado a MusicVolumeSetting.");
                 }
                 else if (StaticReferences.Instance?.masterMixerGroup != null)
                 {
                     source.outputAudioMixerGroup = StaticReferences.Instance.masterMixerGroup;
-                    source.volume = 1.0f;
+                    source.volume = 0.7f;
                     Log.LogWarning("[⚠] Usando masterMixerGroup como fallback.");
                 }
                 else
@@ -156,14 +154,23 @@ public partial class FortunateSonPeakPlugin : BaseUnityPlugin
         }
     }
 
-    [HarmonyPatch(typeof(PeakHandler), "EndScreenComplete")]
+    [HarmonyPatch(typeof(GameOverHandler), "LoadAirport")]
     public static class EndScreenPatch
     {
         [HarmonyPostfix] // Execute AFTER EndScreenComplete
-        public static void Postfix()
+        public static void Prefix()
         {
-            Destroy(currentAudioPlayer);
-            currentAudioPlayer = null; // Set to null to avoid stale references
+            if (currentAudioPlayer != null)
+            {
+                Log.LogInfo("Deteniendo la música del mod...");
+                Destroy(currentAudioPlayer);
+                currentAudioPlayer = null; // Set to null to avoid stale references
+                Log.LogInfo("Música del mod detenida y objeto destruido.");
+            }
+            else
+            {
+                Log.LogWarning("No hay música del mod para detener.");
+            }
             Log.LogInfo("Música del mod detenida y objeto destruido.");
         }
     }
