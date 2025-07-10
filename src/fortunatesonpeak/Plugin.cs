@@ -1,45 +1,39 @@
-﻿using BepInEx;
-using BepInEx.Logging;
-using UnityEngine;
-using HarmonyLib;
+﻿using System; // Make sure System is included for Exception
 using System.IO;
+using System.Linq;
 using System.Reflection;
+using BepInEx;
+using BepInEx.Logging;
 using fortunatesonpeak;
-using System;
+using HarmonyLib;
+using UnityEngine;
+using UnityEngine.Audio; // Needed for AudioMixerGroup
+using UnityEngine.Networking; // Needed for UnityWebRequestMultimedia
 
+// Make sure you have added references to Zorro.Core.Runtime.dll and Sirenix.Serialization.dll
+// in your .csproj file or via your IDE's reference manager.
+// These DLLs are usually found in your game's PEAK_Data\Managed folder.
 
 namespace fortunatesonpeak;
 
-// Here are some basic resources on code style and naming conventions to help
-// you in your first CSharp plugin!
-// https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions
-// https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/identifier-names
-// https://learn.microsoft.com/en-us/dotnet/standard/design-guidelines/names-of-namespaces
-
-// This BepInAutoPlugin attribute comes from the Hamunii.BepInEx.AutoPlugin
-// NuGet package, and it will generate the BepInPlugin attribute for you!
-// For more info, see https://github.com/Hamunii/BepInEx.AutoPlugin
-
 [BepInPlugin("com.aleasdev.fortunatesonpeak", "fortunatesonpeak", "1.0.0")]
-
 public partial class FortunateSonPeakPlugin : BaseUnityPlugin
 {
-
     public static ManualLogSource Log { get; private set; } = null!;
-
-    private static AudioClip fortunateSonClip = null!; 
+    private static AudioClip fortunateSonClip = null!;
+    private static GameObject? currentAudioPlayer;
 
     private void Awake()
     {
         Log = Logger;
         Log.LogInfo("fortunatesonpeak plugin is loaded!");
-        Log.LogInfo("el mod ql esta cargando...");
+        Log.LogInfo("El mod está cargando..."); 
 
         LoadAudioClip();
 
         var harmony = new Harmony("com.aleasdev.fortunatesonpeak");
         harmony.PatchAll();
-        Log.LogInfo("el mod ql forme cargado correctamente!");
+        Log.LogInfo("¡El mod se ha cargado correctamente!"); 
     }
 
     private void LoadAudioClip()
@@ -51,22 +45,7 @@ public partial class FortunateSonPeakPlugin : BaseUnityPlugin
 
             if (File.Exists(audioFilePath))
             {
-                // Unity puede cargar archivos WAV directamente en runtime
-                // Necesitamos un GameObject temporal para el AudioSource si lo queremos cargar con UnityWebRequest
-                // Ojo: Esto es una Coroutine, así que la carga es asíncrona.
-                // Podríamos hacerlo sincrónico si no nos importa bloquear un poco.
-                // Para simplificar, y dado que estamos en Awake, lo haremos sincrónico si el tamaño no es un problema.
-                // Sin embargo, UnityWebRequest.GetAudioClip es el camino a seguir para archivos más grandes.
-
-                // Para un archivo pequeño y simplicidad, podrías intentar esto (menos robusto para errores de carga):
-                // byte[] audioBytes = File.ReadAllBytes(audioFilePath);
-                // fortunateSonClip = WavUtility.ToAudioClip(audioBytes, "fortunateson"); // Necesitarías una clase WavUtility
-
-                // La forma asíncrona es la más segura y robusta:
-                 GameObject tempGameObject = new GameObject("AudioLoader");
-                // Asegúrate de que este objeto no se destruya al cargar escenas, o hazlo persistente.
-                DontDestroyOnLoad(tempGameObject); 
-                StartCoroutine(LoadWavFile(audioFilePath, tempGameObject)); // Pasamos el GameObject para que la Coroutine lo destruya
+                StartCoroutine(LoadWavFile(audioFilePath));
             }
             else
             {
@@ -79,88 +58,147 @@ public partial class FortunateSonPeakPlugin : BaseUnityPlugin
         }
     }
 
-    // Coroutine para cargar el archivo WAV
-    private System.Collections.IEnumerator LoadWavFile(string path, GameObject owner)
+    private System.Collections.IEnumerator LoadWavFile(string path)
     {
-        using (UnityEngine.Networking.UnityWebRequest www = UnityEngine.Networking.UnityWebRequestMultimedia.GetAudioClip("file://" + path, AudioType.WAV))
+        using (
+            UnityWebRequest www = UnityWebRequestMultimedia.GetAudioClip(
+                "file://" + path,
+                AudioType.WAV
+            )
+        )
         {
             yield return www.SendWebRequest();
 
-            if (www.result == UnityEngine.Networking.UnityWebRequest.Result.ConnectionError || www.result == UnityEngine.Networking.UnityWebRequest.Result.ProtocolError)
+            if (
+                www.result == UnityWebRequest.Result.ConnectionError
+                || www.result == UnityWebRequest.Result.ProtocolError
+            )
             {
-                Log.LogError(www.error);
+                Log.LogError($"Error al cargar audio: {www.error}"); // Using string interpolation
             }
             else
             {
-                fortunateSonClip = UnityEngine.Networking.DownloadHandlerAudioClip.GetContent(www);
+                fortunateSonClip = DownloadHandlerAudioClip.GetContent(www);
                 if (fortunateSonClip != null)
                 {
                     Log.LogInfo("Audio 'fortunateson.wav' cargado correctamente.");
                 }
                 else
                 {
-                    Log.LogError("No se pudo obtener el contenido del AudioClip desde el archivo WAV.");
+                    Log.LogError(
+                        "No se pudo obtener el contenido del AudioClip desde el archivo WAV."
+                    );
                 }
             }
         }
-        // Destruir el GameObject temporal después de cargar
-        Destroy(owner);
     }
 
-    // --- PARCHE DE HARMONY ---
+    // [HarmonyPatch(typeof(PeakHandler), "OpenDiscord")]
     [HarmonyPatch(typeof(PeakHandler), "SummonHelicopter")]
     public static class HelicopterSpawnPatch
     {
         [HarmonyPrefix]
-        public static void Prefix()
+        public static void Postfix()
         {
             Log.LogInfo("¡Parche activado! Intentando reproducir 'Fortunate Son'...");
 
-            if (FortunateSonPeakPlugin.fortunateSonClip != null)
+            if (fortunateSonClip != null)
             {
-                // Crear un GameObject temporal para reproducir el sonido.
-                // Es importante que no se destruya inmediatamente si el método original
-                // causa un cambio de escena o destrucción de objetos.
-                GameObject audioPlayer = new GameObject("FortunateSonAudioPlayer");
-                // Para que el objeto persista a través de posibles cambios de escena,
-                // aunque en un final de nivel, podría no ser estrictamente necesario
-                // si la escena no se recarga inmediatamente.
-                GameObject.DontDestroyOnLoad(audioPlayer); 
+                // Destruir el objeto de audio anterior si existe
+                if (currentAudioPlayer != null)
+                {
+                    UnityEngine.Object.Destroy(currentAudioPlayer);
+                }
 
-                AudioSource source = audioPlayer.AddComponent<AudioSource>();
-                source.clip = FortunateSonPeakPlugin.fortunateSonClip;
+                // Crear nuevo objeto de audio
+                currentAudioPlayer = new GameObject("FortunateSonAudioPlayer");
+                UnityEngine.Object.DontDestroyOnLoad(currentAudioPlayer);
+
+                // Agregar el componente AudioSource
+                AudioSource source = currentAudioPlayer.AddComponent<AudioSource>();
+                source.clip = fortunateSonClip;
+                source.loop = true;
+
+                // Buscar el AudioMixerGroup de música
+
+                // Buscar el AudioMixerGroup de música
+                var musicGroup = Resources
+                    .FindObjectsOfTypeAll<AudioMixerGroup>()
+                    .FirstOrDefault(g => g.name == "Music_Setting");
+
+                if (musicGroup != null)
+                {
+                    source.outputAudioMixerGroup = musicGroup;
+                    source.volume = 1.0f;
+                    Log.LogInfo("[✔] Asignado a MusicVolumeSetting.");
+                }
+                else if (StaticReferences.Instance?.masterMixerGroup != null)
+                {
+                    source.outputAudioMixerGroup = StaticReferences.Instance.masterMixerGroup;
+                    source.volume = 1.0f;
+                    Log.LogWarning("[⚠] Usando masterMixerGroup como fallback.");
+                }
+                else
+                {
+                    source.volume = 0.7f;
+                    Log.LogError("[✖] No se encontró ningún AudioMixerGroup.");
+                }
+
                 source.Play();
-
-                // Opcional: para que el GameObject se destruya solo después de que termine la canción.
-                // Considera la duración de la canción.
-                // GameObject.Destroy(audioPlayer, fortunatesonClip.length + 1f); // +1f para dar un pequeño margen
-
-                FortunateSonPeakPlugin.Log.LogInfo("¡'Fortunate Son' debería estar sonando ahora!");
+                Log.LogInfo("¡'Fortunate Son' debería estar sonando ahora!");
             }
             else
             {
-                FortunateSonPeakPlugin.Log.LogWarning("El AudioClip de 'Fortunate Son' no se ha cargado. No se puede reproducir la canción.");
+                Log.LogWarning(
+                    "El AudioClip de 'Fortunate Son' no se ha cargado. No se puede reproducir la canción."
+                );
             }
         }
     }
-
 
     [HarmonyPatch(typeof(PeakHandler), "EndScreenComplete")]
     public static class EndScreenPatch
     {
-        [HarmonyPostfix] // Ejecutar DESPUÉS de EndScreenComplete
+        [HarmonyPostfix] // Execute AFTER EndScreenComplete
         public static void Postfix()
         {
-            FortunateSonPeakPlugin.Log.LogInfo("EndScreenComplete detectado. Deteniendo música del mod...");
-            // Busca el GameObject que creamos para reproducir la música
-            GameObject audioPlayer = GameObject.Find("FortunateSonAudioPlayer");
-            if (audioPlayer != null)
-            {
-                // Destruye el GameObject, lo que detendrá la reproducción y lo eliminará
-                GameObject.Destroy(audioPlayer);
-                FortunateSonPeakPlugin.Log.LogInfo("Música del mod detenida y objeto destruido.");
-            }
+            Destroy(currentAudioPlayer);
+            currentAudioPlayer = null; // Set to null to avoid stale references
+            Log.LogInfo("Música del mod detenida y objeto destruido.");
         }
     }
-    
+
+    private static AudioMixerGroup? GetMusicMixerGroup()
+    {
+        foreach (var obj in Resources.FindObjectsOfTypeAll<UnityEngine.Object>())
+        {
+            var type = obj.GetType();
+
+            // Ignorar si el tipo no se llama MusicVolumeSetting
+            if (type.Name != "MusicVolumeSetting")
+                continue;
+
+            // Obtener campo protegido o privado "mixerGroup" desde la clase base VolumeSetting
+            var mixerGroupField = type.BaseType?.GetField(
+                "mixerGroup",
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
+            );
+
+            if (mixerGroupField == null)
+                continue;
+
+            var mixerGroup = mixerGroupField.GetValue(obj) as AudioMixerGroup;
+
+            if (mixerGroup != null)
+            {
+                Log.LogInfo($"[✔] AudioMixerGroup de música encontrado: {mixerGroup.name}");
+                return mixerGroup;
+            }
+        }
+
+        Log.LogWarning(
+            "[⚠] No se encontró ninguna instancia válida de MusicVolumeSetting con un AudioMixerGroup."
+        );
+        return null;
+    }
 }
