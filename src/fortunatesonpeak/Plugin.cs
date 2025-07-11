@@ -1,4 +1,5 @@
 ﻿using System; // Make sure System is included for Exception
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -20,11 +21,14 @@ namespace fortunatesonpeak;
 public partial class FortunateSonPeakPlugin : BaseUnityPlugin
 {
     public static ManualLogSource Log { get; private set; } = null!;
-    private static AudioClip fortunateSonClip = null!;
+    private static AudioClip? fortunateSonClip;
     private static GameObject? currentAudioPlayer;
+    public static FortunateSonPeakPlugin Instance { get; private set; } = null!;
 
     private void Awake()
     {
+        Instance = this;
+
         Log = Logger;
         Log.LogInfo("fortunatesonpeak plugin is loaded!");
         Log.LogInfo("El mod está cargando...");
@@ -41,7 +45,7 @@ public partial class FortunateSonPeakPlugin : BaseUnityPlugin
         try
         {
             string pluginLocation = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            string audioFilePath = Path.Combine(pluginLocation, "fortunateson.wav");
+            string audioFilePath = Path.Combine(pluginLocation, "FortunateSon.wav");
 
             if (File.Exists(audioFilePath))
             {
@@ -93,7 +97,7 @@ public partial class FortunateSonPeakPlugin : BaseUnityPlugin
         }
     }
 
-    // [HarmonyPatch(typeof(PeakHandler), "OpenDiscord")]
+    // [HarmonyPatch(typeof(PeakHandler), "OpenDiscord")]AudioMixerGroup
     [HarmonyPatch(typeof(PeakHandler), "SummonHelicopter")]
     public static class HelicopterSpawnPatch
     {
@@ -154,58 +158,124 @@ public partial class FortunateSonPeakPlugin : BaseUnityPlugin
         }
     }
 
+    // Parche para detener la música cuando se carga la pantalla de fin del juego
+    // Este parche se activa cuando se llama al método LoadAirport de GameOverHandler.
     [HarmonyPatch(typeof(GameOverHandler), "LoadAirport")]
     public static class EndScreenPatch
     {
-        [HarmonyPostfix] // Execute AFTER EndScreenComplete
+        [HarmonyPostfix]
         public static void Prefix()
         {
+            Log.LogInfo("¡Parche activado! Deteniendo la música de 'Fortunate Son'...");
+
+            // Verificar si el objeto de audio actual existe y tiene un AudioSource
             if (currentAudioPlayer != null)
             {
-                Log.LogInfo("Deteniendo la música del mod...");
-                Destroy(currentAudioPlayer);
-                currentAudioPlayer = null; // Set to null to avoid stale references
-                Log.LogInfo("Música del mod detenida y objeto destruido.");
+                var audioSource = currentAudioPlayer.GetComponent<AudioSource>();
+
+                if (audioSource != null)
+                {
+                    // Iniciar la corrutina de fade out usando la instancia del plugin
+                    // Asegúrate de que FortunateSonPeakPlugin.Instance no sea null
+                    if (FortunateSonPeakPlugin.Instance != null)
+                    {
+                        FortunateSonPeakPlugin.Instance.StartCoroutine(
+                            StopAudioAfterFade(audioSource, 2.0f)
+                        ); // Duración del fade out
+                        Log.LogInfo("¡Iniciando fade out de la música de 'Fortunate Son'!");
+                    }
+                    else
+                    {
+                        Log.LogError(
+                            "La instancia de FortunateSonPeakPlugin no está disponible para iniciar el fade out. Deteniendo el audio inmediatamente."
+                        );
+                        audioSource.Stop(); // Detener inmediatamente como fallback
+                        UnityEngine.Object.Destroy(currentAudioPlayer);
+                        currentAudioPlayer = null;
+                    }
+                }
+                else
+                {
+                    Log.LogWarning(
+                        "No se encontró AudioSource en currentAudioPlayer. Destruyendo inmediatamente."
+                    );
+                    UnityEngine.Object.Destroy(currentAudioPlayer);
+                    currentAudioPlayer = null;
+                }
             }
             else
             {
-                Log.LogWarning("No hay música del mod para detener.");
+                Log.LogWarning("No hay un reproductor de audio activo para detener la música.");
             }
-            Log.LogInfo("Música del mod detenida y objeto destruido.");
         }
-    }
 
-    private static AudioMixerGroup? GetMusicMixerGroup()
-    {
-        foreach (var obj in Resources.FindObjectsOfTypeAll<UnityEngine.Object>())
+        private static System.Collections.IEnumerator StopAudioAfterFade(
+            AudioSource audioSource,
+            float fadeDuration
+        )
         {
-            var type = obj.GetType();
+            float startVolume = audioSource.volume;
+            float elapsedTime = 0f;
 
-            // Ignorar si el tipo no se llama MusicVolumeSetting
-            if (type.Name != "MusicVolumeSetting")
-                continue;
-
-            // Obtener campo protegido o privado "mixerGroup" desde la clase base VolumeSetting
-            var mixerGroupField = type.BaseType?.GetField(
-                "mixerGroup",
-                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
-            );
-
-            if (mixerGroupField == null)
-                continue;
-
-            var mixerGroup = mixerGroupField.GetValue(obj) as AudioMixerGroup;
-
-            if (mixerGroup != null)
+            while (elapsedTime < fadeDuration)
             {
-                Log.LogInfo($"[✔] AudioMixerGroup de música encontrado: {mixerGroup.name}");
-                return mixerGroup;
+                // Usar Time.unscaledDeltaTime para que el fade no se vea afectado por la escala de tiempo del juego
+                elapsedTime += Time.unscaledDeltaTime;
+                audioSource.volume = Mathf.Lerp(startVolume, 0f, elapsedTime / fadeDuration);
+                yield return null;
+            }
+
+            audioSource.Stop();
+            // Opcional: Resetear el volumen a su valor original después de detenerlo,
+            // por si el AudioSource se reutiliza más tarde (aunque aquí lo destruimos).
+            audioSource.volume = startVolume;
+
+            // Destruir el GameObject que contiene el AudioSource después del fade out
+            if (currentAudioPlayer != null)
+            {
+                Destroy(currentAudioPlayer);
+                currentAudioPlayer = null;
+                Log.LogInfo("Música del mod desvanecida y objeto destruido.");
             }
         }
 
-        Log.LogWarning(
-            "[⚠] No se encontró ninguna instancia válida de MusicVolumeSetting con un AudioMixerGroup."
-        );
-        return null;
+        // Método para obtener el AudioMixerGroup de música
+        // Este método busca en los recursos del juego para encontrar una instancia de MusicVolumeSetting
+        // y extrae su AudioMixerGroup.
+        // Si no se encuentra, devuelve null y registra una advertencia.
+
+        private static AudioMixerGroup? GetMusicMixerGroup()
+        {
+            foreach (var obj in Resources.FindObjectsOfTypeAll<UnityEngine.Object>())
+            {
+                var type = obj.GetType();
+
+                // Ignorar si el tipo no se llama MusicVolumeSetting
+                if (type.Name != "MusicVolumeSetting")
+                    continue;
+
+                // Obtener campo protegido o privado "mixerGroup" desde la clase base VolumeSetting
+                var mixerGroupField = type.BaseType?.GetField(
+                    "mixerGroup",
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
+                );
+
+                if (mixerGroupField == null)
+                    continue;
+
+                var mixerGroup = mixerGroupField.GetValue(obj) as AudioMixerGroup;
+
+                if (mixerGroup != null)
+                {
+                    Log.LogInfo($"[✔] AudioMixerGroup de música encontrado: {mixerGroup.name}");
+                    return mixerGroup;
+                }
+            }
+
+            Log.LogWarning(
+                "[⚠] No se encontró ninguna instancia válida de MusicVolumeSetting con un AudioMixerGroup."
+            );
+            return null;
+        }
     }
 }
